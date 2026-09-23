@@ -1,0 +1,43 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# === Virtual env ===
+.venv/
+venv/
+env/
+ENV/
+
+# === IDE / Editor ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# === Env / Secrets ===
+.env
+.env.*
+!.env.example
+
+# === Logs & caches ===
+logs/
+*.log
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# === Runtime / Sandbox ===
+tmp/
+temp/
+sandbox/tmp/
+*.tmp
