@@ -56,7 +56,7 @@ Có thể bật mặc định bằng `sandbox.enabled: true` trong `config.yaml`
 
 - [x] Phase 0: ReAct loop
 - [x] Phase 1: coding tools (bash/file)
-- [ ] Phase 2: sandbox Docker (xem sandbox/)
+- [x] Phase 2: sandbox Docker (xem sandbox/)
 - [ ] Phase 3: computer-use (hoàn thiện tools/computer_tool.py)
 - [ ] Phase 4: multi-agent (planner/coder/reviewer)
 - [ ] Phase 5: memory RAG codebase
