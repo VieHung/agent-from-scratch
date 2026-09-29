@@ -29,7 +29,9 @@ def edit_file(path: str, oldString: str, newString: str) -> str:
 
 
 def glob_files(pattern: str) -> str:
-    hits = globlib.glob(pattern, recursive=True)[:50]
+    hits = [p for p in globlib.glob(pattern, recursive=True)
+            if ".git" not in p.split(os.sep)
+            and not any(part.startswith(".env") for part in p.split(os.sep))][:50]
     return "\n".join(hits) or "(no match)"
 
 
@@ -37,7 +39,11 @@ def grep(pattern: str, include: str = "*.py", path: str = ".") -> str:
     rx = re.compile(pattern)
     out = []
     for root, _, files in os.walk(path):
+        if ".git" in root.split(os.sep) or any(part.startswith(".env") for part in root.split(os.sep)):
+            continue
         for fn in files:
+            if fn.startswith(".env"):
+                continue
             if not globlib.fnmatch.fnmatch(fn, include):
                 continue
             fp = os.path.join(root, fn)

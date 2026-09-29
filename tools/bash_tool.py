@@ -1,13 +1,19 @@
 """Tool bash an toàn cho Phase 1."""
 import subprocess
+from sandbox.errors import SandboxError
 
 BLOCKED = ["rm -rf /", "mkfs", "dd if=", ":(){", "shutdown", "reboot", "chmod -R 777 /"]
 
 
-def bash(command: str, timeout: int = 30, workdir: str = ".") -> str:
+def bash(command: str, timeout: int = 30, workdir: str = ".", sandbox=None) -> str:
     for b in BLOCKED:
         if b in command:
             return f"BLOCKED: lệnh chứa pattern nguy hiểm '{b}'"
+    if sandbox is not None:
+        try:
+            return sandbox.run(command, timeout=timeout, workdir=workdir)
+        except SandboxError as exc:
+            return f"ERROR: {exc}"            
     try:
         p = subprocess.run(
             command, shell=True, cwd=workdir or ".",

@@ -2,6 +2,7 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -11,11 +12,14 @@ from core.registry import ToolRegistry
 from tools.bash_tool import BASH_SCHEMA, bash
 from tools.file_tool import SCHEMAS as FILE_SCHEMAS
 from tools.computer_tool import SCHEMAS as COMP_SCHEMAS
+from sandbox.manager import DockerSandbox
+import yaml
 
 
-def build_registry():
+def build_registry(sandbox=None):
     r = ToolRegistry()
-    r.register("bash", "Chạy lệnh shell Ubuntu", BASH_SCHEMA, bash)
+    bash_fn = (lambda **kwargs: bash(**kwargs, sandbox=sandbox)) if sandbox else bash
+    r.register("bash", "Chạy lệnh shell Ubuntu", BASH_SCHEMA, bash_fn)
     descs = {
         "read_file": "Đọc file",
         "write_file": "Tạo/ghi đè file",
@@ -27,8 +31,33 @@ def build_registry():
         "type_text": "Gõ phím (stub Phase 3)",
     }
     for name, (schema, fn) in {**FILE_SCHEMAS, **COMP_SCHEMAS}.items():
+        if sandbox and name in {"read_file", "write_file", "edit_file", "glob_files", "grep"}:
+            fn = _workspace_tool(sandbox, fn)
         r.register(name, descs.get(name, name), schema, fn)
     return r
+
+
+def _workspace_tool(sandbox, fn):
+    """Keep host-side file tools inside the mounted workspace when sandboxed."""
+    def call(**kwargs):
+        for key in ("path", "pattern"):
+            value = kwargs.get(key)
+            if not value:
+                continue
+            candidate = Path(value)
+            if key == "pattern" and (candidate.is_absolute() or ".." in candidate.parts):
+                return "ERROR: path must stay inside the workspace"
+            if key == "path":
+                resolved = (sandbox.workspace / candidate).resolve()
+                try:
+                    relative = resolved.relative_to(sandbox.workspace)
+                except ValueError:
+                    return "ERROR: path must stay inside the workspace"
+                if ".git" in relative.parts or any(part.startswith(".env") for part in relative.parts):
+                    return "ERROR: access to private paths is blocked in sandbox mode"
+                kwargs[key] = str(resolved)
+        return fn(**kwargs)
+    return call
 
 
 def main():
@@ -36,15 +65,23 @@ def main():
     ap.add_argument("--task", required=True)
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--max-steps", type=int, default=12)
+    ap.add_argument("--sandbox", action="store_true", help="Chạy bash trong Docker, không mạng")
     a = ap.parse_args()
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except Exception:
         pass
+    config_path = Path(__file__).with_name("config.yaml")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    sandbox_config = config.get("sandbox", {})
+    sandbox = None
+    if a.sandbox or sandbox_config.get("enabled", False):
+        sandbox = DockerSandbox(sandbox_config.get("image", "agent-ubuntu:sandbox"))
     llm = LLMClient(mock=a.mock)
-    print(f"mode={'MOCK' if llm.mock else llm.model} tools={build_registry().names()}")
-    result = run(a.task, llm, build_registry(), max_steps=a.max_steps)
+    registry = build_registry(sandbox)
+    print(f"mode={'MOCK' if llm.mock else llm.model} sandbox={'on' if sandbox else 'off'} tools={registry.names()}")
+    result = run(a.task, llm, registry, max_steps=a.max_steps)
     print("\n=== FINAL ===\n" + result["final"])
 
 

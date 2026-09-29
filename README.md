@@ -43,6 +43,15 @@ pip install -r requirements.txt
 python3 main.py --task "liệt kê file trong thư mục này"
 ```
 
+Chạy tool `bash` trong Docker sandbox (cần Docker daemon hoạt động):
+
+```bash
+python3 main.py --task "liệt kê file trong thư mục này" --sandbox
+```
+
+Lệnh shell chạy trong container không có mạng; workspace được mount để agent đọc/ghi file.
+Có thể bật mặc định bằng `sandbox.enabled: true` trong `config.yaml`.
+
 ## Roadmap
 
 - [x] Phase 0: ReAct loop
