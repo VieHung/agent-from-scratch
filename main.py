@@ -16,7 +16,7 @@ from sandbox.manager import DockerSandbox
 import yaml
 
 
-def build_registry(sandbox=None):
+def build_registry(sandbox=None, browser_enabled=False):
     r = ToolRegistry()
     bash_fn = (lambda **kwargs: bash(**kwargs, sandbox=sandbox)) if sandbox else bash
     r.register("bash", "Chạy lệnh shell Ubuntu", BASH_SCHEMA, bash_fn)
@@ -30,7 +30,11 @@ def build_registry(sandbox=None):
         "click": "Click chuột (stub Phase 3)",
         "type_text": "Gõ phím (stub Phase 3)",
     }
-    for name, (schema, fn) in {**FILE_SCHEMAS, **COMP_SCHEMAS}.items():
+    schemas = dict(FILE_SCHEMAS)
+    if browser_enabled:
+        schemas.update(COMP_SCHEMAS)
+
+    for name, (schema, fn) in schemas.items():
         if sandbox and name in {"read_file", "write_file", "edit_file", "glob_files", "grep"}:
             fn = _workspace_tool(sandbox, fn)
         r.register(name, descs.get(name, name), schema, fn)
@@ -62,6 +66,7 @@ def _workspace_tool(sandbox, fn):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--browser", action=argparse.BooleanOptionalAction, default=None, help="Bật/tắt browser tools; mặc định theo config.yaml")
     ap.add_argument("--task", required=True)
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--max-steps", type=int, default=12)
@@ -79,7 +84,13 @@ def main():
     if a.sandbox or sandbox_config.get("enabled", False):
         sandbox = DockerSandbox(sandbox_config.get("image", "agent-ubuntu:sandbox"))
     llm = LLMClient(mock=a.mock)
-    registry = build_registry(sandbox)
+    browser_config = config.get("browser", {})
+    browser_enabled = (
+        browser_config.get("enabled", False)
+        if a.browser is None
+        else a.browser
+    )
+    registry = build_registry(sandbox, browser_enabled=browser_enabled)
     print(f"mode={'MOCK' if llm.mock else llm.model} sandbox={'on' if sandbox else 'off'} tools={registry.names()}")
     result = run(a.task, llm, registry, max_steps=a.max_steps)
     print("\n=== FINAL ===\n" + result["final"])

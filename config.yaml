@@ -8,3 +8,5 @@ agent:
 sandbox:
   enabled: false   # bật true khi đã có Docker (Phase 2)
   image: "agent-ubuntu:sandbox"
+browser:
+  enabled: false
