@@ -6,7 +6,7 @@ agent:
   max_steps: 12
   workdir: "."
 sandbox:
-  enabled: false   # bật true khi đã có Docker (Phase 2)
+  enabled: true   # bật true khi đã có Docker (Phase 2)
   image: "agent-ubuntu:sandbox"
 browser:
   enabled: false
