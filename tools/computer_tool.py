@@ -6,10 +6,22 @@ Rồi implement:
 - click(x,y), type_text(text), press(key): via xdotool / pyautogui
 An toàn: chỉ chạy trong VM, tắt sudo.
 """
+import base64
+import mss
+import mss.tools
 
-
-def screenshot() -> str:
-    return "STUB: chưa implement. Phase 3 cần mss + model vision."
+def screenshot() -> dict:
+    with mss.mss() as sct:
+        shot = sct.grab(sct.monitors[0])
+        png_bytes = mss.tools.to_png(shot.rgb, shot.size)
+        
+    return {
+        "kind": "image",
+        "mime_type": "image/png",
+        "base64": base64.b64encode(png_bytes).decode("ascii"),
+        "width": shot.width,
+        "height": shot.height,
+    }
 
 
 def click(x: int, y: int) -> str:

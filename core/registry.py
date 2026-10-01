@@ -1,5 +1,6 @@
 """Tool registry: đăng ký, export OpenAI schema, execute."""
 import traceback
+from typing import Any
 
 
 class ToolRegistry:
@@ -18,11 +19,17 @@ class ToolRegistry:
             })
         return out
 
-    def execute(self, name, arguments):
+    def execute(self, name, arguments) -> str | dict[str, Any]:
         if name not in self._tools:
             return f"ERROR: unknown tool '{name}'. Available: {list(self._tools)}"
         try:
-            return str(self._tools[name]["fn"](** (arguments or {})))
+            result = self._tools[name]["fn"](**(arguments or {}))
+            
+            if isinstance(result, dict) and result.get("kind") == "image":
+                return result
+            
+            return str(result)
+            
         except Exception as e:
             return f"ERROR executing {name}: {e}\n{traceback.format_exc(limit=3)}"
 
