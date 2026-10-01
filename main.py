@@ -81,9 +81,18 @@ def main():
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     sandbox_config = config.get("sandbox", {})
     sandbox = None
+    llm_config = config.get("llm", {})
+    agent_config = config.get("agent", {})
     if a.sandbox or sandbox_config.get("enabled", False):
         sandbox = DockerSandbox(sandbox_config.get("image", "agent-ubuntu:sandbox"))
-    llm = LLMClient(mock=a.mock)
+    llm = LLMClient(
+        model=os.getenv("LLM_MODEL") or llm_config.get("model", "~deepseek/deepseek-v4-flash-latest"),
+        base_url=os.getenv("LLM_BASE_URL") or llm_config.get("base_url", "https://openrouter.ai/api/v1"),
+        api_key=os.getenv("LLM_API_KEY", ""),
+        temperature=float(os.getenv("LLM_TEMP", llm_config.get("temperature", 0.2))),
+        mock=a.mock
+    )
+    max_steps = a.max_steps if a.max_steps != 12 else agent_config.get("max_step", 12)
     browser_config = config.get("browser", {})
     browser_enabled = (
         browser_config.get("enabled", False)
@@ -92,7 +101,7 @@ def main():
     )
     registry = build_registry(sandbox, browser_enabled=browser_enabled)
     print(f"mode={'MOCK' if llm.mock else llm.model} sandbox={'on' if sandbox else 'off'} tools={registry.names()}")
-    result = run(a.task, llm, registry, max_steps=a.max_steps)
+    result = run(a.task, llm, registry, max_steps=max_steps)
     print("\n=== FINAL ===\n" + result["final"])
 
 
