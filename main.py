@@ -26,8 +26,10 @@ def build_registry(sandbox=None, computer_use_enabled=False):
         "edit_file": "Sửa 1 đoạn exact-match",
         "glob_files": "Tìm file theo pattern",
         "grep": "Tìm nội dung trong code",
-        "screenshot": "Chụp desktop X11 trong VM (MSS)",
-        "click": "Click theo tọa độ ảnh trong desktop X11 của VM",
+        "screenshot": "Chụp toàn bộ desktop X11 bằng MSS, trả ảnh trực tiếp; không tạo file",
+        "screenshot_region": "Chụp vùng x,y,width,height trên ảnh desktop đầy đủ, trả ảnh crop trực tiếp",
+        "view_image": "Đưa ảnh PNG/JPEG trên đĩa vào model; ảnh crop có thể kèm origin_x/y",
+        "click": "Click theo tọa độ ảnh toàn desktop X11; cộng origin_x/y nếu xem ảnh crop",
         "type_text": "Gõ văn bản vào cửa sổ đang focus trong desktop X11 của VM",
         "press": "Nhấn phím hoặc tổ hợp phím trong desktop X11 của VM",
     }

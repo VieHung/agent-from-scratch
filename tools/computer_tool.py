@@ -6,7 +6,9 @@ does not capture a compositor's Wayland desktop, and xdotool cannot inject
 input into native Wayland clients.
 """
 import base64
+from io import BytesIO
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -83,25 +85,119 @@ def _action_error(action):
         return f"ERROR: {exc}"
 
 
-def screenshot() -> dict | str:
-    """Capture the full X11 desktop as a PNG for the vision model."""
-    def capture_screen():
-        region = _screen_region()
-        try:
-            with mss.mss() as capture:
-                shot = capture.grab(region)
-                png_bytes = mss.tools.to_png(shot.rgb, shot.size)
-        except Exception as exc:
-            raise ComputerUseError(f"MSS screenshot failed: {exc}") from None
-        return {
-            "kind": "image",
-            "mime_type": "image/png",
-            "base64": base64.b64encode(png_bytes).decode("ascii"),
-            "width": shot.width,
-            "height": shot.height,
-        }
+def _capture_image(bounds: tuple[int, int, int, int] | None = None) -> dict:
+    """Capture a full desktop or a rectangle in full screenshot coordinates."""
+    _require_x11()
+    try:
+        with mss.mss() as capture:
+            if not capture.monitors:
+                raise ComputerUseError("MSS did not find an X11 monitor.")
+            desktop = dict(capture.monitors[0])
+            desktop_width = int(desktop["width"])
+            desktop_height = int(desktop["height"])
+            if bounds is None:
+                x, y, width, height = 0, 0, desktop_width, desktop_height
+            else:
+                x, y, width, height = bounds
+                if any(isinstance(value, bool) or not isinstance(value, int) for value in bounds):
+                    raise ComputerUseError("x, y, width and height must be integers.")
+                if (
+                    x < 0 or y < 0 or width <= 0 or height <= 0
+                    or x + width > desktop_width or y + height > desktop_height
+                ):
+                    raise ComputerUseError(
+                        f"Region must fit inside the {desktop_width}x{desktop_height} desktop "
+                        "and have positive width and height."
+                    )
+            region = {
+                "left": int(desktop["left"]) + x,
+                "top": int(desktop["top"]) + y,
+                "width": width,
+                "height": height,
+            }
+            shot = capture.grab(region)
+            png_bytes = mss.tools.to_png(shot.rgb, shot.size)
+    except ComputerUseError:
+        raise
+    except Exception as exc:
+        raise ComputerUseError(f"MSS screenshot failed: {exc}") from None
+    return {
+        "kind": "image",
+        "mime_type": "image/png",
+        "base64": base64.b64encode(png_bytes).decode("ascii"),
+        "width": shot.width,
+        "height": shot.height,
+        "origin_x": x,
+        "origin_y": y,
+        "desktop_width": desktop_width,
+        "desktop_height": desktop_height,
+    }
 
-    return _action_error(capture_screen)
+
+def screenshot() -> dict | str:
+    """Capture the full X11 desktop as an image for the vision model."""
+    return _action_error(lambda: _capture_image())
+
+
+def screenshot_region(x: int, y: int, width: int, height: int) -> dict | str:
+    """Capture a desktop rectangle and return its image and desktop origin."""
+    return _action_error(lambda: _capture_image((x, y, width, height)))
+
+
+def view_image(path: str, origin_x: int | None = None, origin_y: int | None = None) -> dict | str:
+    """Send a local PNG/JPEG to vision; optional origin maps a desktop crop."""
+    def open_image():
+        from PIL import Image
+
+        if not isinstance(path, str) or not path:
+            raise ComputerUseError("path must be a local PNG or JPEG file path.")
+        if (origin_x is None) != (origin_y is None):
+            raise ComputerUseError("Provide both origin_x and origin_y for a desktop crop.")
+        if origin_x is not None and any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (origin_x, origin_y)
+        ):
+            raise ComputerUseError("origin_x and origin_y must be nonnegative integers.")
+        try:
+            with Path(path).open("rb") as image_file:
+                image_bytes = image_file.read(20 * 1024 * 1024 + 1)
+        except OSError as exc:
+            raise ComputerUseError(f"Cannot read image: {exc}") from None
+        if len(image_bytes) > 20 * 1024 * 1024:
+            raise ComputerUseError("Image file is larger than 20 MiB.")
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                image_format = image.format
+                width, height = image.size
+                if image_format not in {"PNG", "JPEG"}:
+                    raise ComputerUseError("view_image supports PNG and JPEG files only.")
+                if width <= 0 or height <= 0 or width * height > 40_000_000:
+                    raise ComputerUseError("Image dimensions are invalid or too large.")
+                image.load()
+        except (OSError, ValueError, Image.DecompressionBombError) as exc:
+            raise ComputerUseError(f"Invalid image file: {exc}") from None
+
+        result = {
+            "kind": "image",
+            "mime_type": "image/png" if image_format == "PNG" else "image/jpeg",
+            "base64": base64.b64encode(image_bytes).decode("ascii"),
+            "width": width,
+            "height": height,
+        }
+        if origin_x is not None:
+            desktop = _screen_region()
+            desktop_width, desktop_height = int(desktop["width"]), int(desktop["height"])
+            if origin_x + width > desktop_width or origin_y + height > desktop_height:
+                raise ComputerUseError("Image and origin do not fit inside the current desktop.")
+            result.update({
+                "origin_x": origin_x,
+                "origin_y": origin_y,
+                "desktop_width": desktop_width,
+                "desktop_height": desktop_height,
+            })
+        return result
+
+    return _action_error(open_image)
 
 
 def click(x: int, y: int, button: int = 1) -> str:
@@ -166,12 +262,49 @@ SCHEMAS = {
         {"type": "object", "properties": {}},
         screenshot,
     ),
+    "screenshot_region": (
+        {
+            "type": "object",
+            "properties": {
+                "x": {"type": "integer", "description": "Left pixel in the full desktop screenshot"},
+                "y": {"type": "integer", "description": "Top pixel in the full desktop screenshot"},
+                "width": {"type": "integer", "description": "Crop width in pixels"},
+                "height": {"type": "integer", "description": "Crop height in pixels"},
+            },
+            "required": ["x", "y", "width", "height"],
+        },
+        screenshot_region,
+    ),
+    "view_image": (
+        {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Local PNG or JPEG path"},
+                "origin_x": {
+                    "type": "integer",
+                    "description": "Optional full desktop X of this image's top-left pixel",
+                },
+                "origin_y": {
+                    "type": "integer",
+                    "description": "Optional full desktop Y of this image's top-left pixel",
+                },
+            },
+            "required": ["path"],
+        },
+        view_image,
+    ),
     "click": (
         {
             "type": "object",
             "properties": {
-                "x": {"type": "integer", "description": "X pixel in the screenshot image"},
-                "y": {"type": "integer", "description": "Y pixel in the screenshot image"},
+                "x": {
+                    "type": "integer",
+                    "description": "X pixel in full desktop screenshot; add crop origin_x to crop-local X",
+                },
+                "y": {
+                    "type": "integer",
+                    "description": "Y pixel in full desktop screenshot; add crop origin_y to crop-local Y",
+                },
                 "button": {
                     "type": "integer",
                     "enum": [1, 2, 3],

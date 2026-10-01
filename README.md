@@ -68,6 +68,10 @@ Có thể bật mặc định bằng `sandbox.enabled: true` trong `config.yaml`
 
 Backend hiện tại dùng MSS đọc desktop X11 qua `DISPLAY`, còn `xdotool` gửi click/phím vào cửa sổ đang focus. Chạy chính agent bên trong desktop của VM; không chuyển tiếp `DISPLAY`, `XAUTHORITY` hoặc `/var/run/docker.sock` từ máy host vào container.
 
+`screenshot()` trả ảnh toàn desktop trực tiếp cho model. Khi cần xem chi tiết, gọi `screenshot_region(x, y, width, height)` với tọa độ trên ảnh toàn desktop; ảnh crop cũng được gửi trực tiếp, không tạo file `/tmp`. Ảnh crop kèm `origin_x/origin_y`; `click(x, y)` luôn nhận tọa độ trên desktop đầy đủ. Với ảnh PNG/JPEG đã có trên đĩa, `view_image(path)` gửi ảnh vào model; nếu đó là crop từ desktop, truyền thêm `origin_x` và `origin_y` để có thể quy đổi tọa độ click. `read_file` chỉ dùng để đọc văn bản.
+
+Để tránh gửi lại mọi ảnh ở mỗi lượt gọi model, vòng lặp chỉ giữ tối đa hai ảnh hiện hành (ảnh toàn màn hình gần nhất và ảnh chi tiết gần nhất); ảnh cũ được bỏ phần base64 nhưng vẫn giữ metadata tọa độ. Sau thao tác GUI thành công, ảnh trước thao tác được bỏ để buộc quan sát lại trạng thái mới. Nếu đã chụp 4 lần mà chưa có thao tác GUI, lần chụp tiếp theo sẽ dừng tác vụ và báo chưa xác nhận hoàn tất, thay vì đoán vị trí click hoặc lặp vô hạn. Log CLI hiển thị số ảnh/dung lượng base64 trước mỗi request và thời gian chờ model.
+
 Trong Ubuntu VM, cài `xdotool` và Python dependencies:
 
 ```bash

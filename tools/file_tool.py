@@ -5,6 +5,13 @@ import re
 
 
 def read_file(path: str) -> str:
+    with open(path, "rb") as f:
+        prefix = f.read(1024)
+    if (
+        b"\x00" in prefix
+        or prefix.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a"))
+    ):
+        return "ERROR: binary file; use view_image for PNG/JPEG images when computer-use is enabled"
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = f.read()
     return data[:8000] + ("\n...[truncated]" if len(data) > 8000 else "")
