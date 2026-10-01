@@ -41,13 +41,17 @@ def run(task, llm, registry, max_steps=12, verbose=True):
                     )
                 else:
                     print(f"observation: {obs[:800]}")
-            log_obs = {
-                "kind": "image",
-                "mime_type": obs["mime_type"],
-                "width": obs["width"],
-                "height": obs["height"],
-            }
-            log.append({"step": step, "tool": name, "args": args, "obs": obs})
+            if is_image:
+                # Keep image logs small; the base64 payload is still sent to the model below.
+                log_obs = {
+                    "kind": "image",
+                    "mime_type": obs["mime_type"],
+                    "width": obs["width"],
+                    "height": obs["height"],
+                }
+            else:
+                log_obs = obs
+            log.append({"step": step, "tool": name, "args": args, "obs": log_obs})
             messages.append({"role": "assistant", "content": content or "", "tool_calls": [
                 {"id": tc.get("id", f"s{step}"), "type": "function",
                  "function": {"name": name, "arguments": str(args)}}

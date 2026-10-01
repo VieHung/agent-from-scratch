@@ -16,7 +16,7 @@ from sandbox.manager import DockerSandbox
 import yaml
 
 
-def build_registry(sandbox=None, browser_enabled=False):
+def build_registry(sandbox=None, computer_use_enabled=False):
     r = ToolRegistry()
     bash_fn = (lambda **kwargs: bash(**kwargs, sandbox=sandbox)) if sandbox else bash
     r.register("bash", "Chạy lệnh shell Ubuntu", BASH_SCHEMA, bash_fn)
@@ -26,12 +26,13 @@ def build_registry(sandbox=None, browser_enabled=False):
         "edit_file": "Sửa 1 đoạn exact-match",
         "glob_files": "Tìm file theo pattern",
         "grep": "Tìm nội dung trong code",
-        "screenshot": "Chụp màn hình (stub Phase 3)",
-        "click": "Click chuột (stub Phase 3)",
-        "type_text": "Gõ phím (stub Phase 3)",
+        "screenshot": "Chụp desktop X11 trong VM (MSS)",
+        "click": "Click theo tọa độ ảnh trong desktop X11 của VM",
+        "type_text": "Gõ văn bản vào cửa sổ đang focus trong desktop X11 của VM",
+        "press": "Nhấn phím hoặc tổ hợp phím trong desktop X11 của VM",
     }
     schemas = dict(FILE_SCHEMAS)
-    if browser_enabled:
+    if computer_use_enabled:
         schemas.update(COMP_SCHEMAS)
 
     for name, (schema, fn) in schemas.items():
@@ -66,11 +67,18 @@ def _workspace_tool(sandbox, fn):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--browser", action=argparse.BooleanOptionalAction, default=None, help="Bật/tắt browser tools; mặc định theo config.yaml")
+    ap.add_argument(
+        "--computer-use", "--browser", dest="computer_use",
+        action=argparse.BooleanOptionalAction, default=None,
+        help="Bật/tắt computer-use X11; --browser vẫn là alias tương thích",
+    )
     ap.add_argument("--task", required=True)
     ap.add_argument("--mock", action="store_true")
     ap.add_argument("--max-steps", type=int, default=12)
-    ap.add_argument("--sandbox", action="store_true", help="Chạy bash trong Docker, không mạng")
+    ap.add_argument(
+        "--sandbox", action=argparse.BooleanOptionalAction, default=None,
+        help="Chạy bash trong Docker; dùng --no-sandbox khi agent chạy trực tiếp trong VM",
+    )
     a = ap.parse_args()
     try:
         from dotenv import load_dotenv
@@ -83,7 +91,8 @@ def main():
     sandbox = None
     llm_config = config.get("llm", {})
     agent_config = config.get("agent", {})
-    if a.sandbox or sandbox_config.get("enabled", False):
+    sandbox_enabled = sandbox_config.get("enabled", False) if a.sandbox is None else a.sandbox
+    if sandbox_enabled:
         sandbox = DockerSandbox(sandbox_config.get("image", "agent-ubuntu:sandbox"))
     llm = LLMClient(
         model=os.getenv("LLM_MODEL") or llm_config.get("model", "~deepseek/deepseek-v4-flash-latest"),
@@ -93,14 +102,21 @@ def main():
         mock=a.mock
     )
     max_steps = a.max_steps if a.max_steps != 12 else agent_config.get("max_step", 12)
-    browser_config = config.get("browser", {})
-    browser_enabled = (
-        browser_config.get("enabled", False)
-        if a.browser is None
-        else a.browser
+    computer_use_config = config.get(
+        "computer_use", config.get("browser", {})
     )
-    registry = build_registry(sandbox, browser_enabled=browser_enabled)
-    print(f"mode={'MOCK' if llm.mock else llm.model} sandbox={'on' if sandbox else 'off'} tools={registry.names()}")
+    computer_use_enabled = (
+        computer_use_config.get("enabled", False)
+        if a.computer_use is None
+        else a.computer_use
+    )
+    registry = build_registry(sandbox, computer_use_enabled=computer_use_enabled)
+    print(
+        f"mode={'MOCK' if llm.mock else llm.model} "
+        f"sandbox={'on' if sandbox else 'off'} "
+        f"computer_use={'on' if computer_use_enabled else 'off'} "
+        f"tools={registry.names()}"
+    )
     result = run(a.task, llm, registry, max_steps=max_steps)
     print("\n=== FINAL ===\n" + result["final"])
 
